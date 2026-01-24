@@ -56,12 +56,6 @@ Install dependencies with uv:
 uv sync
 ```
 
-Copy the example config and fill in secrets locally:
-
-```bash
-cp .env.example .env
-```
-
 ```bash
 DIGEST_GH_ORG=your-org \
 LINEAR_API_KEY=... \
