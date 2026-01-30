@@ -32,3 +32,4 @@ jobs:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: uv run python scripts/digest.py
+# Trigger scheduler re-registration (Jan 2026)
