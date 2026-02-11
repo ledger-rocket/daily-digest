@@ -792,6 +792,25 @@ def generate_llm_narrative(
     )
 
 
+def format_for_slack(
+    narrative: str,
+    tickets_by_id: dict[str, LinearTicket],
+) -> str:
+    """Convert LLM narrative to Slack mrkdwn format."""
+    # Convert markdown headings (## text) to Slack bold (*text*)
+    text = re.sub(r"^#{1,3}\s+(.+)$", r"*\1*", narrative, flags=re.MULTILINE)
+
+    # Replace ticket IDs with Slack links to Linear
+    for ticket_id, ticket in tickets_by_id.items():
+        if ticket.url:
+            text = text.replace(ticket_id, f"<{ticket.url}|{ticket_id}>")
+
+    # Replace @username with GitHub profile links
+    text = re.sub(r"@(\w[\w-]*)", r"<https://github.com/\1|@\1>", text)
+
+    return text
+
+
 def trim_message(message: str) -> str:
     """Trim the message to fit Slack limits."""
     if len(message) <= MAX_SLACK_CHARS:
@@ -1078,6 +1097,7 @@ def run_digest(args: argparse.Namespace, settings: Settings, client: OpenAI) -> 
         settings.openai_model,
         usage_tracker,
     )
+    narrative = format_for_slack(narrative, tickets_by_id)
     message = trim_message(narrative)
     stats = build_stats(all_prs, digest_items, unlinked)
     logger.info("Digest stats: {stats}", stats=json.dumps(stats, indent=2))
