@@ -5,6 +5,7 @@ from unittest.mock import patch, MagicMock
 
 from scripts.digest import (
     LinearTicket,
+    SLACK_BLOCK_TEXT_LIMIT,
     format_for_slack,
     post_to_slack,
     chunk_slack_text,
@@ -76,11 +77,19 @@ class TestFormatForSlack:
         assert "dashboard#240" in result
         assert "<https://" not in result
 
-    def test_renders_mentions_as_italic(self):
+    def test_strips_org_prefix_from_pr_refs(self):
+        narrative = "ledger-rocket/dashboard#240"
+        result = format_for_slack(narrative, {}, gh_org=GH_ORG)
+        assert f"<https://github.com/{GH_ORG}/dashboard/pull/240|dashboard#240>" in result
+        assert "ledger-rocket/" not in result.replace(
+            f"https://github.com/{GH_ORG}/", ""
+        )
+
+    def test_renders_mentions_as_bold(self):
         narrative = "@stepansin and @laurencehook-lr"
         result = format_for_slack(narrative, {})
-        assert "_@stepansin_" in result
-        assert "_@laurencehook-lr_" in result
+        assert "*@stepansin*" in result
+        assert "*@laurencehook-lr*" in result
         assert "<https://github.com/" not in result
 
     def test_combined_formatting(self):
@@ -99,13 +108,33 @@ class TestFormatForSlack:
         assert "*✨ Features*" in result
         assert "<https://linear.app/team/issue/PRO-1124/feature|PRO-1124>" in result
         assert f"<https://github.com/{GH_ORG}/dashboard/pull/240|dashboard#240>" in result
-        assert "_@laurencehook-lr_" in result
+        assert "*@laurencehook-lr*" in result
         assert "##" not in result
 
     def test_no_changes_when_already_formatted(self):
         narrative = "*✨ Features*\nSome text with no tickets or mentions."
         result = format_for_slack(narrative, {})
         assert result == narrative
+
+
+class TestChunkSlackText:
+    def test_no_link_split_across_chunks(self):
+        """A Slack hyperlink must never be split across two chunks."""
+        link = "<https://github.com/ledger-rocket/dashboard/pull/240|dashboard#240>"
+        # Build a message where the link sits right at the boundary
+        padding = "x" * (SLACK_BLOCK_TEXT_LIMIT - 10) + "\n" + link
+        chunks = chunk_slack_text(padding)
+        for chunk in chunks:
+            assert chunk.count("<") == chunk.count(">"), (
+                f"Unbalanced angle brackets in chunk: {chunk[-120:]}"
+            )
+
+    def test_empty_message(self):
+        assert chunk_slack_text("") == [""]
+
+    def test_short_message_single_chunk(self):
+        msg = "Hello\nWorld"
+        assert chunk_slack_text(msg) == ["Hello\nWorld"]
 
 
 class TestPostToSlack:
@@ -116,7 +145,7 @@ class TestPostToSlack:
             mock_response.status_code = 200
             mock_post.return_value = mock_response
 
-            message = "*✨ Features*\nSome feature was added.\n[PRO-123; repo#1 _@dev_]"
+            message = "*✨ Features*\nSome feature was added.\n[PRO-123; repo#1 *@dev*]"
             window_text = "Release window: 2026-02-09 05:37 UTC → 2026-02-10 05:37 UTC"
 
             post_to_slack("https://hooks.slack.com/test", message, window_text)
@@ -150,7 +179,7 @@ class TestPostToSlack:
                 "Added account creation flow.\n"
                 "[<https://linear.app/t/PRO-1124|PRO-1124>; "
                 f"<https://github.com/{GH_ORG}/dashboard/pull/240|dashboard#240> "
-                "_@dev_]"
+                "*@dev*]"
             )
             post_to_slack("https://hooks.slack.com/test", message, "window")
 
@@ -161,4 +190,4 @@ class TestPostToSlack:
             full_text = "\n".join(section_texts)
             assert "*✨ Features*" in full_text
             assert "<https://linear.app/t/PRO-1124|PRO-1124>" in full_text
-            assert "_@dev_" in full_text
+            assert "*@dev*" in full_text

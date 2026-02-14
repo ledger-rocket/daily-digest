@@ -439,7 +439,7 @@ def extract_pr_author(node_dict: JSONDict) -> str:
 def extract_repo_name(node_dict: JSONDict) -> str:
     """Extract repository name for a PR."""
     repository = ensure_dict(node_dict.get("repository"), "repository")
-    return ensure_str(repository.get("nameWithOwner"), "repository.nameWithOwner")
+    return ensure_str(repository.get("name"), "repository.name")
 
 
 def parse_pr_node(node_dict: JSONDict) -> PullRequest:
@@ -490,7 +490,7 @@ def fetch_merged_prs(
                     }
                   }
                 }
-                repository { nameWithOwner }
+                repository { name }
               }
             }
           }
@@ -806,16 +806,16 @@ def format_for_slack(
         if ticket.url:
             text = text.replace(ticket_id, f"<{ticket.url}|{ticket_id}>")
 
-    # Replace repo#123 with GitHub PR links
+    # Replace [org/]repo#123 with GitHub PR links (strip optional org prefix)
     if gh_org:
         text = re.sub(
-            r"([\w.-]+)#(\d+)",
+            r"(?:[\w.-]+/)?([\w.-]+)#(\d+)",
             rf"<https://github.com/{gh_org}/\1/pull/\2|\1#\2>",
             text,
         )
 
-    # Replace @username with italic (unlinked)
-    text = re.sub(r"@(\w[\w-]*)", r"_@\1_", text)
+    # Replace @username with bold (unlinked)
+    text = re.sub(r"@(\w[\w-]*)", r"*@\1*", text)
 
     return text
 
@@ -828,13 +828,25 @@ def trim_message(message: str) -> str:
 
 
 def chunk_slack_text(message: str) -> list[str]:
-    """Split message into Slack block-sized chunks."""
+    """Split message into Slack block-sized chunks on newline boundaries."""
     if not message:
         return [""]
-    return [
-        message[i : i + SLACK_BLOCK_TEXT_LIMIT]
-        for i in range(0, len(message), SLACK_BLOCK_TEXT_LIMIT)
-    ]
+    lines = message.split("\n")
+    chunks: list[str] = []
+    current: list[str] = []
+    current_len = 0
+    for line in lines:
+        # +1 accounts for the newline joining character
+        added = len(line) + (1 if current else 0)
+        if current and current_len + added > SLACK_BLOCK_TEXT_LIMIT:
+            chunks.append("\n".join(current))
+            current = []
+            current_len = 0
+        current.append(line)
+        current_len += added
+    if current:
+        chunks.append("\n".join(current))
+    return chunks
 
 
 def post_to_slack(webhook_url: str, message: str, window_text: str) -> None:
