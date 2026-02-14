@@ -795,6 +795,7 @@ def generate_llm_narrative(
 def format_for_slack(
     narrative: str,
     tickets_by_id: dict[str, LinearTicket],
+    gh_org: str = "",
 ) -> str:
     """Convert LLM narrative to Slack mrkdwn format."""
     # Convert markdown headings (## text) to Slack bold (*text*)
@@ -805,8 +806,16 @@ def format_for_slack(
         if ticket.url:
             text = text.replace(ticket_id, f"<{ticket.url}|{ticket_id}>")
 
-    # Replace @username with GitHub profile links
-    text = re.sub(r"@(\w[\w-]*)", r"<https://github.com/\1|@\1>", text)
+    # Replace repo#123 with GitHub PR links
+    if gh_org:
+        text = re.sub(
+            r"([\w.-]+)#(\d+)",
+            rf"<https://github.com/{gh_org}/\1/pull/\2|\1#\2>",
+            text,
+        )
+
+    # Replace @username with italic (unlinked)
+    text = re.sub(r"@(\w[\w-]*)", r"_@\1_", text)
 
     return text
 
@@ -1097,7 +1106,7 @@ def run_digest(args: argparse.Namespace, settings: Settings, client: OpenAI) -> 
         settings.openai_model,
         usage_tracker,
     )
-    narrative = format_for_slack(narrative, tickets_by_id)
+    narrative = format_for_slack(narrative, tickets_by_id, settings.digest_gh_org)
     message = trim_message(narrative)
     stats = build_stats(all_prs, digest_items, unlinked)
     logger.info("Digest stats: {stats}", stats=json.dumps(stats, indent=2))

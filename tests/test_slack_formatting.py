@@ -24,6 +24,9 @@ def _ticket(identifier: str, url: str) -> LinearTicket:
     )
 
 
+GH_ORG = "ledger-rocket"
+
+
 class TestFormatForSlack:
     def test_converts_markdown_headings_to_bold(self):
         narrative = "## ✨ Features\nSome text\n### 🐛 Fixes\nMore text"
@@ -61,11 +64,24 @@ class TestFormatForSlack:
         assert "<|PRO-999>" not in result
         assert "PRO-999" in result
 
-    def test_replaces_github_usernames_with_profile_links(self):
-        narrative = "repo#123 @stepansin, repo#456 @laurencehook-lr"
+    def test_replaces_pr_refs_with_github_links(self):
+        narrative = "dashboard#240 and api-server#55"
+        result = format_for_slack(narrative, {}, gh_org=GH_ORG)
+        assert f"<https://github.com/{GH_ORG}/dashboard/pull/240|dashboard#240>" in result
+        assert f"<https://github.com/{GH_ORG}/api-server/pull/55|api-server#55>" in result
+
+    def test_pr_refs_without_org_are_unchanged(self):
+        narrative = "dashboard#240"
         result = format_for_slack(narrative, {})
-        assert "<https://github.com/stepansin|@stepansin>" in result
-        assert "<https://github.com/laurencehook-lr|@laurencehook-lr>" in result
+        assert "dashboard#240" in result
+        assert "<https://" not in result
+
+    def test_renders_mentions_as_italic(self):
+        narrative = "@stepansin and @laurencehook-lr"
+        result = format_for_slack(narrative, {})
+        assert "_@stepansin_" in result
+        assert "_@laurencehook-lr_" in result
+        assert "<https://github.com/" not in result
 
     def test_combined_formatting(self):
         tickets = {
@@ -79,10 +95,11 @@ class TestFormatForSlack:
             "Added a new flow for account creation.\n"
             "[PRO-1124; dashboard#240 @laurencehook-lr]\n"
         )
-        result = format_for_slack(narrative, tickets)
+        result = format_for_slack(narrative, tickets, gh_org=GH_ORG)
         assert "*✨ Features*" in result
         assert "<https://linear.app/team/issue/PRO-1124/feature|PRO-1124>" in result
-        assert "<https://github.com/laurencehook-lr|@laurencehook-lr>" in result
+        assert f"<https://github.com/{GH_ORG}/dashboard/pull/240|dashboard#240>" in result
+        assert "_@laurencehook-lr_" in result
         assert "##" not in result
 
     def test_no_changes_when_already_formatted(self):
@@ -99,7 +116,7 @@ class TestPostToSlack:
             mock_response.status_code = 200
             mock_post.return_value = mock_response
 
-            message = "*✨ Features*\nSome feature was added.\n[PRO-123; repo#1 @dev]"
+            message = "*✨ Features*\nSome feature was added.\n[PRO-123; repo#1 _@dev_]"
             window_text = "Release window: 2026-02-09 05:37 UTC → 2026-02-10 05:37 UTC"
 
             post_to_slack("https://hooks.slack.com/test", message, window_text)
@@ -132,7 +149,8 @@ class TestPostToSlack:
                 "*✨ Features*\n"
                 "Added account creation flow.\n"
                 "[<https://linear.app/t/PRO-1124|PRO-1124>; "
-                "dashboard#240 <https://github.com/dev|@dev>]"
+                f"<https://github.com/{GH_ORG}/dashboard/pull/240|dashboard#240> "
+                "_@dev_]"
             )
             post_to_slack("https://hooks.slack.com/test", message, "window")
 
@@ -143,4 +161,4 @@ class TestPostToSlack:
             full_text = "\n".join(section_texts)
             assert "*✨ Features*" in full_text
             assert "<https://linear.app/t/PRO-1124|PRO-1124>" in full_text
-            assert "<https://github.com/dev|@dev>" in full_text
+            assert "_@dev_" in full_text
